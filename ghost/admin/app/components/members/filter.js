@@ -13,7 +13,7 @@ const FILTER_PROPERTIES = [
     {label: 'Email', name: 'email', group: 'Basic', valueType: 'text'},
     // {label: 'Location', name: 'location', group: 'Basic'},
     {label: 'Label', name: 'label', group: 'Basic', valueType: 'array'},
-    {label: 'Newsletter subscription', name: 'subscribed', group: 'Basic'},
+    {label: 'Newsletter subscription', name: 'subscribed', group: 'Newsletters'},
     {label: 'Last seen', name: 'last_seen_at', group: 'Basic', valueType: 'date'},
     {label: 'Created', name: 'created_at', group: 'Basic', valueType: 'date'},
     {label: 'Signed up on post/page', name: 'signup', group: 'Basic', valueType: 'array', feature: 'memberAttribution'},
@@ -128,11 +128,13 @@ class Filter {
     @tracked relationOptions;
 
     constructor(options) {
+        console.log(options);
         this.type = options.type;
         this.relation = options.relation;
         this.relationOptions = options.relationOptions;
         this.timezone = options.timezone || 'Etc/UTC';
-
+        this.group = options.group;
+        this.valOptions = options.valOptions;
         const filterProperty = FILTER_PROPERTIES.find(prop => this.type === prop.name);
 
         // date string values are passed in as UTC strings
@@ -164,9 +166,33 @@ export default class MembersFilter extends Component {
     availableFilterRelationsOptions = FILTER_RELATIONS_OPTIONS;
     availableFilterValueOptions = FILTER_VALUE_OPTIONS;
 
+    newsletters = this.store.peekAll('newsletter');
+
     get availableFilterProperties() {
         let availableFilters = FILTER_PROPERTIES;
         const hasMultipleTiers = this.store.peekAll('tier').length > 1;
+        const hasMultipleNewsletters = this.newsletters.length > 1;
+
+        if (hasMultipleNewsletters) {
+            this.newsletters.map((item) => {
+                const exists = availableFilters.find(nsl => nsl.label === item.name);
+                if (!exists){
+                    const NEWSLETTER_OPTIONS = [
+                        {label: 'Subscribed', name: `${item.id}`},
+                        {label: 'Unsubscribed', name: `-${item.id}`}
+                    ];
+                    Object.assign(FILTER_VALUE_OPTIONS, {[item.name]: NEWSLETTER_OPTIONS});
+                    Object.assign(FILTER_RELATIONS_OPTIONS, {[item.name]: FILTER_RELATIONS_OPTIONS.subscribed});
+                    availableFilters.push({
+                        label: item.name,
+                        name: item.name,
+                        group: 'Newsletters',
+                        id: item.id
+                    });
+                }
+                return {};
+            });
+        }
 
         // exclude any filters that are behind disabled feature flags
         availableFilters = availableFilters.filter(prop => !prop.feature || this.feature[prop.feature]);
@@ -243,38 +269,43 @@ export default class MembersFilter extends Component {
         filters.forEach((filter) => {
             const relationStr = this.getFilterRelationOperator(filter.relation);
             const filterProperty = FILTER_PROPERTIES.find(prop => prop.name === filter.type);
-
-            if (filterProperty.valueType === 'array' && filter.value?.length) {
-                const filterValue = '[' + filter.value.join(',') + ']';
-                query += `${filter.type}:${relationStr}${filterValue}+`;
-            } else if (filterProperty.valueType === 'text') {
-                const filterValue = '\'' + filter.value.replace(/'/g, '\\\'') + '\'';
-                query += `${filter.type}:${relationStr}${filterValue}+`;
-            } else if (filterProperty.valueType === 'date') {
-                let filterValue;
-
-                let tzMoment = moment.tz(moment(filter.value).format('YYYY-MM-DD'), this.settings.get('timezone'));
-
-                if (relationStr === '>') {
-                    tzMoment = tzMoment.set({hour: 23, minute: 59, second: 59});
+            if (filterProperty.group !== 'Newsletters') {
+                if (filterProperty.valueType === 'array' && filter.value?.length) {
+                    const filterValue = '[' + filter.value.join(',') + ']';
+                    query += `${filter.type}:${relationStr}${filterValue}+`;
+                } else if (filterProperty.valueType === 'text') {
+                    const filterValue = '\'' + filter.value.replace(/'/g, '\\\'') + '\'';
+                    query += `${filter.type}:${relationStr}${filterValue}+`;
+                } else if (filterProperty.valueType === 'date') {
+                    let filterValue;
+    
+                    let tzMoment = moment.tz(moment(filter.value).format('YYYY-MM-DD'), this.settings.get('timezone'));
+    
+                    if (relationStr === '>') {
+                        tzMoment = tzMoment.set({hour: 23, minute: 59, second: 59});
+                    }
+                    if (relationStr === '>=') {
+                        tzMoment = tzMoment.set({hour: 0, minute: 0, second: 0});
+                    }
+                    if (relationStr === '<') {
+                        tzMoment = tzMoment.set({hour: 0, minute: 0, second: 0});
+                    }
+                    if (relationStr === '<=') {
+                        tzMoment = tzMoment.set({hour: 23, minute: 59, second: 59});
+                    }
+    
+                    filterValue = `'${tzMoment.utc().format(nqlDateFormat)}'`;
+                    query += `${filter.type}:${relationStr}${filterValue}+`;
+                } else {
+                    const filterValue = (typeof filter.value === 'string' && filter.value.includes(' ')) ? `'${filter.value}'` : filter.value;
+                    query += `${filter.type}:${relationStr}${filterValue}+`;
                 }
-                if (relationStr === '>=') {
-                    tzMoment = tzMoment.set({hour: 0, minute: 0, second: 0});
-                }
-                if (relationStr === '<') {
-                    tzMoment = tzMoment.set({hour: 0, minute: 0, second: 0});
-                }
-                if (relationStr === '<=') {
-                    tzMoment = tzMoment.set({hour: 23, minute: 59, second: 59});
-                }
-
-                filterValue = `'${tzMoment.utc().format(nqlDateFormat)}'`;
-                query += `${filter.type}:${relationStr}${filterValue}+`;
             } else {
                 const filterValue = (typeof filter.value === 'string' && filter.value.includes(' ')) ? `'${filter.value}'` : filter.value;
-                query += `${filter.type}:${relationStr}${filterValue}+`;
+                query += `newsletters.id:${relationStr}${filterValue}+`;
             }
         });
+        
         return query.slice(0, -1);
     }
 
@@ -446,7 +477,6 @@ export default class MembersFilter extends Component {
         }
 
         const newProp = FILTER_PROPERTIES.find(prop => prop.name === newType);
-
         let defaultValue = this.availableFilterValueOptions[newType]
             ? this.availableFilterValueOptions[newType][0].name
             : '';
@@ -459,7 +489,7 @@ export default class MembersFilter extends Component {
             defaultValue = moment(moment.tz(this.settings.get('timezone')).format('YYYY-MM-DD')).toDate();
         }
 
-        let defaultRelation = this.availableFilterRelationsOptions[newType][0].name;
+        let defaultRelation = this.availableFilterRelationsOptions?.[newType][0].name;
 
         if (newProp.valueType === 'date') {
             defaultRelation = 'is-or-less';
@@ -470,7 +500,9 @@ export default class MembersFilter extends Component {
             relation: defaultRelation,
             relationOptions: this.availableFilterRelationsOptions[newType],
             value: defaultValue,
-            timezone: this.settings.get('timezone')
+            timezone: this.settings.get('timezone'),
+            group: newProp.group || 'default',
+            valOptions: this.availableFilterValueOptions[newType]
         });
 
         const filterToSwap = this.filters.find(f => f === filter);

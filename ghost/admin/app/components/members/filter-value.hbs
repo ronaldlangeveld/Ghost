@@ -65,6 +65,20 @@
         {{svg-jar "arrow-down-small"}}
     </span>
 
+{{else if (eq @filter.group 'Newsletters')}}
+    <span class="gh-select" data-tp={{@filter.type}}>
+        <OneWaySelect
+            @value={{@filter.value}}
+            @options={{@filter.valOptions}}
+            @optionValuePath="name"
+            @optionLabelPath="label"
+            @optionTargetPath="name"
+            @update={{fn @setFilterValue @filter}}
+            data-test-select="members-filter-value"
+        />
+        {{svg-jar "arrow-down-small"}}
+    </span>
+
 {{else if (eq @filter.type 'last_seen_at')}}
     <GhDatePicker
         @value={{@filter.value}}
