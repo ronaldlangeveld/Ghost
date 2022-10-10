@@ -13,7 +13,7 @@ const FILTER_PROPERTIES = [
     {label: 'Email', name: 'email', group: 'Basic', valueType: 'text'},
     // {label: 'Location', name: 'location', group: 'Basic'},
     {label: 'Label', name: 'label', group: 'Basic', valueType: 'array'},
-    {label: 'Newsletter subscription', name: 'subscribed', group: 'Newsletters'},
+    {label: 'Newsletter subscription', name: 'subscribed', group: 'Basic'},
     {label: 'Last seen', name: 'last_seen_at', group: 'Basic', valueType: 'date'},
     {label: 'Created', name: 'created_at', group: 'Basic', valueType: 'date'},
     {label: 'Signed up on post/page', name: 'signup', group: 'Basic', valueType: 'array', feature: 'memberAttribution'},
@@ -128,7 +128,6 @@ class Filter {
     @tracked relationOptions;
 
     constructor(options) {
-        console.log(options);
         this.type = options.type;
         this.relation = options.relation;
         this.relationOptions = options.relationOptions;
@@ -166,7 +165,8 @@ export default class MembersFilter extends Component {
     availableFilterRelationsOptions = FILTER_RELATIONS_OPTIONS;
     availableFilterValueOptions = FILTER_VALUE_OPTIONS;
 
-    newsletters = this.store.peekAll('newsletter');
+    // @tracked newsletters = this.store.peekAll('newsletter');
+    @tracked newsletters = this.store.peekAll('newsletter');
 
     get availableFilterProperties() {
         let availableFilters = FILTER_PROPERTIES;
@@ -181,13 +181,12 @@ export default class MembersFilter extends Component {
                         {label: 'Subscribed', name: `${item.id}`},
                         {label: 'Unsubscribed', name: `-${item.id}`}
                     ];
-                    Object.assign(FILTER_VALUE_OPTIONS, {[item.name]: NEWSLETTER_OPTIONS});
-                    Object.assign(FILTER_RELATIONS_OPTIONS, {[item.name]: FILTER_RELATIONS_OPTIONS.subscribed});
+                    Object.assign(FILTER_VALUE_OPTIONS, {[item.id]: NEWSLETTER_OPTIONS});
+                    Object.assign(FILTER_RELATIONS_OPTIONS, {[item.id]: FILTER_RELATIONS_OPTIONS.subscribed});
                     availableFilters.push({
                         label: item.name,
-                        name: item.name,
-                        group: 'Newsletters',
-                        id: item.id
+                        name: item.id,
+                        group: 'Newsletters'
                     });
                 }
                 return {};
@@ -264,45 +263,46 @@ export default class MembersFilter extends Component {
 
     generateNqlFilter(filters) {
         const nqlDateFormat = 'YYYY-MM-DD HH:mm:ss';
-
         let query = '';
         filters.forEach((filter) => {
             const relationStr = this.getFilterRelationOperator(filter.relation);
             const filterProperty = FILTER_PROPERTIES.find(prop => prop.name === filter.type);
-            if (filterProperty.group !== 'Newsletters') {
-                if (filterProperty.valueType === 'array' && filter.value?.length) {
-                    const filterValue = '[' + filter.value.join(',') + ']';
-                    query += `${filter.type}:${relationStr}${filterValue}+`;
-                } else if (filterProperty.valueType === 'text') {
-                    const filterValue = '\'' + filter.value.replace(/'/g, '\\\'') + '\'';
-                    query += `${filter.type}:${relationStr}${filterValue}+`;
-                } else if (filterProperty.valueType === 'date') {
-                    let filterValue;
+            if (filterProperty.valueType === 'array' && filter.value?.length) {
+                const filterValue = '[' + filter.value.join(',') + ']';
+                query += `${filter.type}:${relationStr}${filterValue}+`;
+            } else if (filterProperty.valueType === 'text') {
+                const filterValue = '\'' + filter.value.replace(/'/g, '\\\'') + '\'';
+                query += `${filter.type}:${relationStr}${filterValue}+`;
+            } else if (filterProperty.valueType === 'date') {
+                let filterValue;
     
-                    let tzMoment = moment.tz(moment(filter.value).format('YYYY-MM-DD'), this.settings.get('timezone'));
+                let tzMoment = moment.tz(moment(filter.value).format('YYYY-MM-DD'), this.settings.get('timezone'));
     
-                    if (relationStr === '>') {
-                        tzMoment = tzMoment.set({hour: 23, minute: 59, second: 59});
-                    }
-                    if (relationStr === '>=') {
-                        tzMoment = tzMoment.set({hour: 0, minute: 0, second: 0});
-                    }
-                    if (relationStr === '<') {
-                        tzMoment = tzMoment.set({hour: 0, minute: 0, second: 0});
-                    }
-                    if (relationStr === '<=') {
-                        tzMoment = tzMoment.set({hour: 23, minute: 59, second: 59});
-                    }
-    
-                    filterValue = `'${tzMoment.utc().format(nqlDateFormat)}'`;
-                    query += `${filter.type}:${relationStr}${filterValue}+`;
-                } else {
-                    const filterValue = (typeof filter.value === 'string' && filter.value.includes(' ')) ? `'${filter.value}'` : filter.value;
-                    query += `${filter.type}:${relationStr}${filterValue}+`;
+                if (relationStr === '>') {
+                    tzMoment = tzMoment.set({hour: 23, minute: 59, second: 59});
                 }
+                if (relationStr === '>=') {
+                    tzMoment = tzMoment.set({hour: 0, minute: 0, second: 0});
+                }
+                if (relationStr === '<') {
+                    tzMoment = tzMoment.set({hour: 0, minute: 0, second: 0});
+                }
+                if (relationStr === '<=') {
+                    tzMoment = tzMoment.set({hour: 23, minute: 59, second: 59});
+                }
+    
+                filterValue = `'${tzMoment.utc().format(nqlDateFormat)}'`;
+                query += `${filter.type}:${relationStr}${filterValue}+`;
             } else {
                 const filterValue = (typeof filter.value === 'string' && filter.value.includes(' ')) ? `'${filter.value}'` : filter.value;
-                query += `newsletters.id:${relationStr}${filterValue}+`;
+                if (filter.group === 'Newsletters') {
+                    query += `newsletters.id:${relationStr}${filterValue}+`;
+                    if (query.includes('--')) {
+                        query = query.replace('--', '');
+                    }
+                } else {
+                    query += `${filter.type}:${relationStr}${filterValue}+`;
+                }
             }
         });
         
@@ -400,10 +400,28 @@ export default class MembersFilter extends Component {
         }
     }
 
-    parseNqlFilter(filterParam) {
+    async parseNqlFilter(filterParam) {
         const validKeys = Object.keys(FILTER_RELATIONS_OPTIONS);
         let filters;
-
+        let nsl = [];
+        await this.store.findAll('newsletter').then(function async(data) {
+            nsl = data;
+        });
+        
+        if (filterParam.includes('newsletters.id') && nsl.length > 1) {
+            // get id from filterParam. it is always the last part of the string after :
+            let id = filterParam.split(':').pop();
+            let isMin = false;
+            if (id.includes('-')) {
+                isMin = true;
+                let idStr = id.split('-');
+                id = idStr[0];
+            }
+            const newsletter = nsl.find(n => n.id === id);
+            const newParam = `${newsletter.id}:${isMin ? '-' : ''}${newsletter.id}`;
+            filterParam = newParam;
+            return this.filter = new TrackedArray({});
+        }
         try {
             filters = nql.parse(filterParam);
         } catch (e) {
@@ -411,9 +429,7 @@ export default class MembersFilter extends Component {
             this.filters = new TrackedArray([]);
             return;
         }
-
         const filterKeys = Object.keys(filters);
-
         let filterData = [];
 
         if (filterKeys?.length === 1 && validKeys.includes(filterKeys[0])) {
@@ -435,7 +451,6 @@ export default class MembersFilter extends Component {
                 return !!nqlFilter;
             });
         }
-
         this.filters = new TrackedArray(filterData);
     }
 
