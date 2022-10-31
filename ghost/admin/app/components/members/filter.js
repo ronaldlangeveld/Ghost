@@ -181,11 +181,11 @@ export default class MembersFilter extends Component {
                         {label: 'Subscribed', name: `${item.id}`},
                         {label: 'Unsubscribed', name: `-${item.id}`}
                     ];
-                    Object.assign(FILTER_VALUE_OPTIONS, {[item.id]: NEWSLETTER_OPTIONS});
-                    Object.assign(FILTER_RELATIONS_OPTIONS, {[item.id]: FILTER_RELATIONS_OPTIONS.subscribed});
+                    Object.assign(FILTER_VALUE_OPTIONS, {[item.name]: NEWSLETTER_OPTIONS});
+                    Object.assign(FILTER_RELATIONS_OPTIONS, {[item.name]: FILTER_RELATIONS_OPTIONS.subscribed});
                     availableFilters.push({
                         label: item.name,
-                        name: item.id,
+                        name: item.name,
                         group: 'Newsletters'
                     });
                 }
@@ -418,7 +418,7 @@ export default class MembersFilter extends Component {
                 id = idStr[0];
             }
             const newsletter = nsl.find(n => n.id === id);
-            const newParam = `${newsletter.id}:${isMin ? '-' : ''}${newsletter.id}`;
+            const newParam = `${newsletter.name}:${isMin ? '-' : ''}${newsletter.id}`;
             filterParam = newParam;
             return this.filter = new TrackedArray({});
         }
