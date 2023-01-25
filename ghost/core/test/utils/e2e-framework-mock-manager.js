@@ -198,6 +198,10 @@ const restore = () => {
         mocks.webhookMockReceiver.reset();
     }
 
+    if (mocks.mockMailReceiver) {
+        mocks.mockMailReceiver.reset();
+    }
+
     mailService.GhostMailer.prototype.send = originalMailServiceSend;
 };
 
